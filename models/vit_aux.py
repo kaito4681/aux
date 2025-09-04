@@ -49,7 +49,7 @@ class Encoder(nn.Module):
                 attention_dropout,
                 norm_layer,
             )
-        self.layers = nn.ModuleList(layers)
+        self.layers = nn.ModuleList(layers.values())
         self.ln = norm_layer(hidden_dim)
 
     def forward(self, input: torch.Tensor):
