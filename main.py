@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 
 import torch
@@ -166,6 +167,14 @@ def main():
 
     device = torch.device("cuda")
     model.to(device)
+
+    # 最高精度を追跡するための変数
+    best_accuracy = 0.0
+    best_epoch = 0
+
+    # 保存ディレクトリの作成
+    save_dir = "checkpoints"
+    os.makedirs(save_dir, exist_ok=True)
 
     for epoch in range(num_epochs):
         # 訓練
@@ -418,15 +427,125 @@ def main():
         if args.use_wandb:
             wandb.log(log_dict)
 
+        # 最高精度の更新とモデル保存
+        # メインモデル（aux使用時は最終層、通常時は出力層）の精度で判定
+        current_accuracy = test_main_acc if args.aux else test_acc
+
+        if current_accuracy > best_accuracy:
+            best_accuracy = current_accuracy
+            best_epoch = epoch + 1
+
+            # モデル保存のためのファイル名を生成
+            model_name = "vit_base_aux" if args.aux else "vit_base"
+            dataset = "cifar100"
+            checkpoint_path = os.path.join(save_dir, f"{model_name}_{dataset}_best.pth")
+
+            # チェックポイントの保存
+            checkpoint = {
+                "epoch": epoch + 1,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "best_accuracy": best_accuracy,
+                "loss": current_accuracy,  # 精度を保存
+                "config": {
+                    "model_type": model_name,
+                    "image_size": 224,
+                    "patch_size": 32,
+                    "num_layers": 12,
+                    "num_heads": 12,
+                    "hidden_dim": 768,
+                    "mlp_dim": 3072,
+                    "num_classes": 100,
+                    "seed": args.seed,
+                },
+            }
+
+            torch.save(checkpoint, checkpoint_path)
+            print(
+                f"✓ New best model saved! Accuracy: {best_accuracy:.2f}% (Epoch {best_epoch})"
+            )
+            print(f"  Saved to: {checkpoint_path}")
+
+        print(f"Current best accuracy: {best_accuracy:.2f}% (Epoch {best_epoch})")
+
         print("-" * 20)
         print()
 
         # スケジューラーのステップを実行
         scheduler.step()
 
+    # 訓練終了時の結果表示
+    print("=" * 50)
+    print("Training completed!")
+    print(f"Best accuracy: {best_accuracy:.2f}% (achieved at epoch {best_epoch})")
+    model_name = "vit_aux" if args.aux else "vit_base"
+    checkpoint_path = os.path.join(save_dir, f"{model_name}_best.pth")
+    print(f"Best model saved at: {checkpoint_path}")
+    print("=" * 50)
+
     # wandb終了
     if args.use_wandb:
         wandb.finish()
+
+
+def load_best_model(checkpoint_path, device="cuda"):
+    """
+    保存された最高精度のモデルを読み込む
+
+    Args:
+        checkpoint_path (str): チェックポイントファイルのパス
+        device (str): デバイス ('cuda' or 'cpu')
+
+    Returns:
+        tuple: (model, checkpoint_info)
+    """
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    config = checkpoint["config"]
+
+    # モデルの種類に応じてインスタンスを作成
+    if config["model_type"] == "vit_aux":
+        model = VitAux(
+            image_size=config["image_size"],
+            patch_size=config["patch_size"],
+            num_layers=config["num_layers"],
+            num_heads=config["num_heads"],
+            hidden_dim=config["hidden_dim"],
+            mlp_dim=config["mlp_dim"],
+            num_classes=config["num_classes"],
+        )
+    else:
+        model = Vit(
+            image_size=config["image_size"],
+            patch_size=config["patch_size"],
+            num_layers=config["num_layers"],
+            num_heads=config["num_heads"],
+            hidden_dim=config["hidden_dim"],
+            mlp_dim=config["mlp_dim"],
+            num_classes=config["num_classes"],
+        )
+
+    # 保存された重みを読み込み
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(device)
+
+    # チェックポイント情報
+    checkpoint_info = {
+        "epoch": checkpoint["epoch"],
+        "best_accuracy": checkpoint["best_accuracy"],
+        "model_type": config["model_type"],
+        "seed": config["seed"],
+    }
+
+    print(f"Loaded model: {config['model_type']}")
+    print(
+        f"Best accuracy: {checkpoint['best_accuracy']:.2f}% (Epoch {checkpoint['epoch']})"
+    )
+
+    return model, checkpoint_info
 
 
 if __name__ == "__main__":
