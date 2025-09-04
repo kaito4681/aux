@@ -17,6 +17,13 @@ def main():
         action="store_true",
         help="auxiliary classifierを追加するかどうか",
     )
+    parser.add_argument(
+        "--check", action="store_true", help="確認のために1エポックだけ実行"
+    )
+    parser.add_argument(
+        "--use-tqdm", action="store_true", help="進捗表示にtqdmを使うかどうか"
+    )
+
     args = parser.parse_args()
 
     # 定義
@@ -43,12 +50,28 @@ def main():
         )
     )
 
-    batch_size = 32
-    num_epochs = 128
+    batch_size = 64
+    num_epochs = 1 if args.check else 256
     lr = 1e-3
-    weight_decay = 1e-4
+    weight_decay = 5e-5
+    eta_min = 1e-6
+    warmup_epochs = 16
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    # Warmup + CosineAnnealingLRスケジューラー
+    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=num_epochs - warmup_epochs, eta_min=eta_min
+    )
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.1, total_iters=warmup_epochs
+    )
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup_scheduler, main_scheduler],
+        milestones=[warmup_epochs],
+    )
+
     criterion = torch.nn.CrossEntropyLoss()
 
     train_dataset = torchvision.datasets.CIFAR100(
@@ -137,7 +160,9 @@ def main():
                     train_aux_correct[i] += (aux_predicted == labels).sum().item()
 
                 # 最終的なloss
-                aux_loss_sum = sum([criterion(aux_output, labels) for aux_output in outputs[1]])
+                aux_loss_sum = sum(
+                    [criterion(aux_output, labels) for aux_output in outputs[1]]
+                )
                 loss = main_loss + 0.3 * aux_loss_sum / len(outputs[1])
 
             else:
@@ -200,52 +225,63 @@ def main():
                     test_correct += (predicted == labels).sum().item()
 
         # ログ出力
-        print(f"Epoch [{epoch + 1}/{num_epochs}]")
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"Epoch [{epoch + 1}/{num_epochs}] - Learning Rate: {current_lr:.6f}")
         if args.aux:
             # train main
+            print("Train")
+            print("main")
             print(
-                f"Train Loss: {train_loss / train_total:.4f}, "
-                f"Train Accuracy: {100 * train_correct / train_total:.2f}%"
+                f"Loss: {train_loss / train_total:.4f}, "
+                f"Acc: {100 * train_correct / train_total:.2f}%"
             )
-            print()
 
             if train_aux_loss is not None and train_aux_correct is not None:
                 for i, aux_loss in enumerate(train_aux_loss):
+                    print(f"Aux {i + 1}")
                     print(
-                        f"Aux {i + 1} Loss: {aux_loss / train_total:.4f}, "
-                        f"Aux {i + 1} Accuracy: {100 * train_aux_correct[i] / train_total:.2f}%"
+                        f"Loss: {aux_loss / train_total:.4f}, "
+                        f"Acc: {100 * train_aux_correct[i] / train_total:.2f}%"
                     )
-                    print()
             print()
 
             # test
+            print("Test")
+            print("main")
             print(
-                f"Test Loss: {test_loss / test_total:.4f}, "
-                f"Test Accuracy: {100 * test_correct / test_total:.2f}%"
+                f"Loss: {test_loss / test_total:.4f}, "
+                f"Acc: {100 * test_correct / test_total:.2f}%"
             )
             print()
 
             if test_aux_loss is not None and test_aux_correct is not None:
                 for i, aux_loss in enumerate(test_aux_loss):
+                    print(f"Aux {i + 1}")
                     print(
-                        f" Aux {i + 1} Loss: {aux_loss / test_total:.4f}, "
-                        f"Aux {i + 1} Accuracy: {100 * test_aux_correct[i] / test_total:.2f}%"
+                        f"Loss: {aux_loss / test_total:.4f}, "
+                        f"Acc: {100 * test_aux_correct[i] / test_total:.2f}%"
                     )
                     print()
             print()
 
         else:
+            print("Train")
             print(
-                f"Train Loss: {train_loss / train_total:.4f}, "
-                f"Train Accuracy: {100 * train_correct / train_total:.2f}%"
+                f"Loss: {train_loss / train_total:.4f}, "
+                f"Acc: {100 * train_correct / train_total:.2f}%"
+            )
+            print("Test")
+            print(
+                f"Loss: {test_loss / len(test_loader):.4f}, "
+                f"Acc: {100 * test_correct / test_total:.2f}%"
             )
             print()
-            print(f"Test Loss: {test_loss / len(test_loader):.4f}, "
-                  f"Test Accuracy: {100 * test_correct / test_total:.2f}%")
-            print()
-        
+
         print("-" * 20)
         print()
+
+        # スケジューラーのステップを実行
+        scheduler.step()
 
 
 if __name__ == "__main__":
