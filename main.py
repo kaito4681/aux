@@ -1,12 +1,23 @@
 import argparse
+import random
 
 import torch
 import torchvision
-import wandb
 from torchvision.models import VisionTransformer as Vit
 from tqdm import tqdm
 
+import wandb
 from models.vit_aux import VisionTransformerAux as VitAux
+
+
+def set_seed(seed):
+    """再現性のためにseedを固定"""
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def main():
@@ -26,8 +37,12 @@ def main():
         "--use-tqdm", action="store_true", help="進捗表示にtqdmを使うかどうか"
     )
     parser.add_argument("--use-wandb", action="store_true", help="wandbを使うかどうか")
+    parser.add_argument("--seed", type=int, default=42, help="乱数シード (default: 42)")
 
     args = parser.parse_args()
+
+    # seedを固定
+    set_seed(args.seed)
 
     # wandb初期化
     if args.use_wandb:
@@ -38,6 +53,7 @@ def main():
             config={
                 "model": "vit-base-aux" if args.aux else "vit-base",
                 "dataset": "cifar100",
+                "seed": args.seed,
                 "batch_size": 128,
                 "learning_rate": 1e-3,
                 "weight_decay": 5e-5,
