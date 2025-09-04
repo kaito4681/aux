@@ -3,6 +3,7 @@ import argparse
 import torch
 import torchvision
 from torchvision.models import VisionTransformer as Vit
+from tqdm import tqdm
 
 from models.vit_aux import VisionTransformerAux as VitAux
 
@@ -50,7 +51,7 @@ def main():
         )
     )
 
-    batch_size = 64
+    batch_size = 128
     num_epochs = 1 if args.check else 256
     lr = 1e-3
     weight_decay = 5e-5
@@ -132,7 +133,18 @@ def main():
         train_aux_loss = None
         train_aux_correct = None
 
-        for images, labels in train_loader:
+        # tqdmを使うかどうかで分岐
+        train_iterator = (
+            tqdm(
+                train_loader,
+                desc=f"Epoch {epoch + 1:3d}/{num_epochs:3d} - Train",
+                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n:3d}/{total:3d} [{elapsed}<{remaining},{rate_fmt}{postfix}]",
+            )
+            if args.use_tqdm
+            else train_loader
+        )
+
+        for images, labels in train_iterator:
             images, labels = images.to(device), labels.to(device)
 
             optimizer.zero_grad()
@@ -175,6 +187,16 @@ def main():
 
             train_loss += loss.item()
 
+            # tqdmを使っている場合、進捗バーに情報を更新
+            if args.use_tqdm and isinstance(train_iterator, tqdm):
+                current_acc = 100 * train_correct / train_total
+                train_iterator.set_postfix(
+                    {
+                        "Loss": f"{train_loss / train_total:.4f}",
+                        "Acc": f"{current_acc:>6.2f}%",
+                    }
+                )
+
         # 評価
         model.eval()
         test_loss = 0.0
@@ -183,8 +205,19 @@ def main():
         test_aux_loss = None
         test_aux_correct = None
 
+        # tqdmを使うかどうかで分岐
+        test_iterator = (
+            tqdm(
+                test_loader,
+                desc=f"Epoch {epoch + 1:3d}/{num_epochs:3d} - Test ",
+                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n:3d}/{total:3d} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+            )
+            if args.use_tqdm
+            else test_loader
+        )
+
         with torch.no_grad():
-            for images, labels in test_loader:
+            for images, labels in test_iterator:
                 images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
 
@@ -224,56 +257,58 @@ def main():
                     _, predicted = torch.max(outputs, 1)
                     test_correct += (predicted == labels).sum().item()
 
+                # tqdmを使っている場合、進捗バーに情報を更新
+                if args.use_tqdm and isinstance(test_iterator, tqdm):
+                    current_acc = 100 * test_correct / test_total
+                    test_iterator.set_postfix(
+                        {
+                            "Loss": f"{test_loss / test_total:.4f}",
+                            "Acc": f"{current_acc:>6.2f}%",
+                        }
+                    )
+
+        # tqdmを使っている場合は改行を追加して表示を整理
+        if args.use_tqdm:
+            print()
+
         # ログ出力
         current_lr = scheduler.get_last_lr()[0]
         print(f"Epoch [{epoch + 1}/{num_epochs}] - Learning Rate: {current_lr:.6f}")
         if args.aux:
             # train main
-            print("Train")
-            print("main")
+            print("Train:")
             print(
-                f"Loss: {train_loss / train_total:.4f}, "
-                f"Acc: {100 * train_correct / train_total:.2f}%"
+                f"  Main    - Loss: {train_loss / train_total:.4f}, Acc: {100 * train_correct / train_total:.2f}%"
             )
 
             if train_aux_loss is not None and train_aux_correct is not None:
                 for i, aux_loss in enumerate(train_aux_loss):
-                    print(f"Aux {i + 1}")
                     print(
-                        f"Loss: {aux_loss / train_total:.4f}, "
-                        f"Acc: {100 * train_aux_correct[i] / train_total:.2f}%"
+                        f"  Aux {i + 1:2d}  - Loss: {aux_loss / train_total:.4f}, Acc: {100 * train_aux_correct[i] / train_total:.2f}%"
                     )
             print()
 
             # test
-            print("Test")
-            print("main")
+            print("Test:")
             print(
-                f"Loss: {test_loss / test_total:.4f}, "
-                f"Acc: {100 * test_correct / test_total:.2f}%"
+                f"  Main    - Loss: {test_loss / test_total:.4f}, Acc: {100 * test_correct / test_total:.2f}%"
             )
-            print()
 
             if test_aux_loss is not None and test_aux_correct is not None:
                 for i, aux_loss in enumerate(test_aux_loss):
-                    print(f"Aux {i + 1}")
                     print(
-                        f"Loss: {aux_loss / test_total:.4f}, "
-                        f"Acc: {100 * test_aux_correct[i] / test_total:.2f}%"
+                        f"  Aux {i + 1:2d}  - Loss: {aux_loss / test_total:.4f}, Acc: {100 * test_aux_correct[i] / test_total:.2f}%"
                     )
-                    print()
             print()
 
         else:
-            print("Train")
+            print("Train:")
             print(
-                f"Loss: {train_loss / train_total:.4f}, "
-                f"Acc: {100 * train_correct / train_total:.2f}%"
+                f"  Loss: {train_loss / train_total:.4f}, Acc: {100 * train_correct / train_total:.2f}%"
             )
-            print("Test")
+            print("Test:")
             print(
-                f"Loss: {test_loss / len(test_loader):.4f}, "
-                f"Acc: {100 * test_correct / test_total:.2f}%"
+                f"  Loss: {test_loss / test_total:.4f}, Acc: {100 * test_correct / test_total:.2f}%"
             )
             print()
 
