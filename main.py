@@ -2,6 +2,7 @@ import argparse
 
 import torch
 import torchvision
+import wandb
 from torchvision.models import VisionTransformer as Vit
 from tqdm import tqdm
 
@@ -24,8 +25,34 @@ def main():
     parser.add_argument(
         "--use-tqdm", action="store_true", help="進捗表示にtqdmを使うかどうか"
     )
+    parser.add_argument("--use-wandb", action="store_true", help="wandbを使うかどうか")
 
     args = parser.parse_args()
+
+    # wandb初期化
+    if args.use_wandb:
+        run_name = "vit-base-aux-cifar100" if args.aux else "vit-base-cifar100"
+        wandb.init(
+            project="aux",
+            name=run_name,
+            config={
+                "model": "vit-base-aux" if args.aux else "vit-base",
+                "dataset": "cifar100",
+                "batch_size": 128,
+                "learning_rate": 1e-3,
+                "weight_decay": 5e-5,
+                "eta_min": 1e-6,
+                "warmup_epochs": 16,
+                "num_epochs": 1 if args.check else 256,
+                "image_size": 224,
+                "patch_size": 32,
+                "num_layers": 12,
+                "num_heads": 12,
+                "hidden_dim": 768,
+                "mlp_dim": 3072,
+                "num_classes": 100,
+            },
+        )
 
     # 定義
     model = (
@@ -274,49 +301,116 @@ def main():
         # ログ出力
         current_lr = scheduler.get_last_lr()[0]
         print(f"Epoch [{epoch + 1}/{num_epochs}] - Learning Rate: {current_lr:.6f}")
+
+        # wandbログ
+        if args.use_wandb:
+            log_dict = {
+                "epoch": epoch + 1,
+                "learning_rate": current_lr,
+            }
+
         if args.aux:
             # train main
             print("Train:")
+            train_main_acc = 100 * train_correct / train_total
+            train_main_loss_avg = train_loss / train_total
             print(
-                f"  Main    - Loss: {train_loss / train_total:.4f}, Acc: {100 * train_correct / train_total:.2f}%"
+                f"  Main    - Loss: {train_main_loss_avg:.4f}, Acc: {train_main_acc:.2f}%"
             )
+
+            if args.use_wandb:
+                log_dict.update(
+                    {
+                        "train/main_loss": train_main_loss_avg,
+                        "train/main_accuracy": train_main_acc,
+                    }
+                )
 
             if train_aux_loss is not None and train_aux_correct is not None:
                 for i, aux_loss in enumerate(train_aux_loss):
+                    aux_acc = 100 * train_aux_correct[i] / train_total
+                    aux_loss_avg = aux_loss / train_total
                     print(
-                        f"  Aux {i + 1:2d}  - Loss: {aux_loss / train_total:.4f}, Acc: {100 * train_aux_correct[i] / train_total:.2f}%"
+                        f"  Aux {i + 1:2d}  - Loss: {aux_loss_avg:.4f}, Acc: {aux_acc:.2f}%"
                     )
+
+                    if args.use_wandb:
+                        log_dict.update(
+                            {
+                                f"train/aux_{i + 1}_loss": aux_loss_avg,
+                                f"train/aux_{i + 1}_accuracy": aux_acc,
+                            }
+                        )
             print()
 
             # test
             print("Test:")
+            test_main_acc = 100 * test_correct / test_total
+            test_main_loss_avg = test_loss / test_total
             print(
-                f"  Main    - Loss: {test_loss / test_total:.4f}, Acc: {100 * test_correct / test_total:.2f}%"
+                f"  Main    - Loss: {test_main_loss_avg:.4f}, Acc: {test_main_acc:.2f}%"
             )
+
+            if args.use_wandb:
+                log_dict.update(
+                    {
+                        "test/main_loss": test_main_loss_avg,
+                        "test/main_accuracy": test_main_acc,
+                    }
+                )
 
             if test_aux_loss is not None and test_aux_correct is not None:
                 for i, aux_loss in enumerate(test_aux_loss):
+                    aux_acc = 100 * test_aux_correct[i] / test_total
+                    aux_loss_avg = aux_loss / test_total
                     print(
-                        f"  Aux {i + 1:2d}  - Loss: {aux_loss / test_total:.4f}, Acc: {100 * test_aux_correct[i] / test_total:.2f}%"
+                        f"  Aux {i + 1:2d}  - Loss: {aux_loss_avg:.4f}, Acc: {aux_acc:.2f}%"
                     )
+
+                    if args.use_wandb:
+                        log_dict.update(
+                            {
+                                f"test/aux_{i + 1}_loss": aux_loss_avg,
+                                f"test/aux_{i + 1}_accuracy": aux_acc,
+                            }
+                        )
             print()
 
         else:
+            train_acc = 100 * train_correct / train_total
+            train_loss_avg = train_loss / train_total
+            test_acc = 100 * test_correct / test_total
+            test_loss_avg = test_loss / test_total
+
             print("Train:")
-            print(
-                f"  Loss: {train_loss / train_total:.4f}, Acc: {100 * train_correct / train_total:.2f}%"
-            )
+            print(f"  Loss: {train_loss_avg:.4f}, Acc: {train_acc:.2f}%")
             print("Test:")
-            print(
-                f"  Loss: {test_loss / test_total:.4f}, Acc: {100 * test_correct / test_total:.2f}%"
-            )
+            print(f"  Loss: {test_loss_avg:.4f}, Acc: {test_acc:.2f}%")
             print()
+
+            if args.use_wandb:
+                log_dict.update(
+                    {
+                        "train/loss": train_loss_avg,
+                        "train/accuracy": train_acc,
+                        "test/loss": test_loss_avg,
+                        "test/accuracy": test_acc,
+                    }
+                )
+
+        # wandbにログを送信
+        if args.use_wandb:
+            wandb.log(log_dict)
 
         print("-" * 20)
         print()
 
         # スケジューラーのステップを実行
         scheduler.step()
+
+    # wandb終了
+    if args.use_wandb:
+        wandb.finish()
 
 
 if __name__ == "__main__":
