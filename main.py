@@ -60,10 +60,10 @@ def main():
                 "dataset": "cifar100",
                 "seed": args.seed,
                 "batch_size": 128,
-                "learning_rate": 3e-4,
-                "weight_decay": 5e-5,
+                "learning_rate": 1e-4,
+                "weight_decay": 0.1,
                 "eta_min": 1e-6,
-                "warmup_epochs": 16,
+                "warmup_epochs": 10,
                 "num_epochs": 1 if args.check else 256,
                 "image_size": 32,  # CIFAR-100の元サイズ
                 "patch_size": 4,  # 8×8=64パッチになる
@@ -101,19 +101,26 @@ def main():
 
     batch_size = 128
     num_epochs = 1 if args.check else 256
-    lr = 3e-4  # 学習率を下げる
-    weight_decay = 5e-5
+    lr = 1e-4  # 学習率を下げる
+    weight_decay = 0.1  # ViTで一般的により高い値
     eta_min = 1e-6
-    warmup_epochs = 16
+    warmup_epochs = 10  # warmupを短くする
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+        betas=(0.9, 0.999),  # 明示的に設定
+        eps=1e-8,
+    )
 
     # Warmup + CosineAnnealingLRスケジューラー
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=num_epochs - warmup_epochs, eta_min=eta_min
     )
+    # より適切なwarmup設定
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer, start_factor=0.1, total_iters=warmup_epochs
+        optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs
     )
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
@@ -226,9 +233,7 @@ def main():
                 aux_loss_sum = sum(
                     [criterion(aux_output, labels) for aux_output in outputs[1]]
                 )
-                loss = main_loss + 0.1 * aux_loss_sum / len(
-                    outputs[1]
-                )
+                loss = main_loss + 0.1 * aux_loss_sum / len(outputs[1])
 
             else:
                 loss = criterion(outputs, labels)
@@ -247,7 +252,7 @@ def main():
                 current_acc = 100 * train_correct / train_total
                 train_iterator.set_postfix(
                     {
-                        "Loss": f"{train_loss / len(train_loader):.4f}", 
+                        "Loss": f"{train_loss / len(train_loader):.4f}",
                         "Acc": f"{current_acc:>6.2f}%",
                     }
                 )
@@ -390,7 +395,7 @@ def main():
             if test_aux_loss is not None and test_aux_correct is not None:
                 for i, aux_loss in enumerate(test_aux_loss):
                     aux_acc = 100 * test_aux_correct[i] / test_total
-                    aux_loss_avg = aux_loss / len(test_loader) 
+                    aux_loss_avg = aux_loss / len(test_loader)
                     print(
                         f"  Aux {i + 1:2d}  - Loss: {aux_loss_avg:.4f}, Acc: {aux_acc:.2f}%"
                     )
@@ -408,7 +413,7 @@ def main():
             train_acc = 100 * train_correct / train_total
             train_loss_avg = train_loss / len(train_loader)
             test_acc = 100 * test_correct / test_total
-            test_loss_avg = test_loss / len(test_loader) 
+            test_loss_avg = test_loss / len(test_loader)
 
             print("Train:")
             print(f"  Loss: {train_loss_avg:.4f}, Acc: {train_acc:.2f}%")
@@ -490,6 +495,10 @@ def main():
     # wandb終了
     if args.use_wandb:
         wandb.finish()
+
+    # 訓練終了時にメモリクリア
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 # def load_best_model(checkpoint_path, device="cuda"):
