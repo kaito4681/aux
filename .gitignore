@@ -12,5 +12,6 @@ wheels/
 data/
 logs/
 wandb/
-*.log
 checkpoints/
+
+vit.log

@@ -1,5 +1,7 @@
 # nohup ./sh/vit.sh > vit.log 2>&1 &
 
+# export WANDB_API_KEY=
+
 mkdir -p logs
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 echo "PID: $$"
