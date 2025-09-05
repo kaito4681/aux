@@ -247,7 +247,7 @@ def main():
                 current_acc = 100 * train_correct / train_total
                 train_iterator.set_postfix(
                     {
-                        "Loss": f"{train_loss / train_total:.4f}",
+                        "Loss": f"{train_loss / len(train_loader):.4f}", 
                         "Acc": f"{current_acc:>6.2f}%",
                     }
                 )
@@ -317,7 +317,7 @@ def main():
                     current_acc = 100 * test_correct / test_total
                     test_iterator.set_postfix(
                         {
-                            "Loss": f"{test_loss / test_total:.4f}",
+                            "Loss": f"{test_loss / len(test_loader):.4f}",
                             "Acc": f"{current_acc:>6.2f}%",
                         }
                     )
@@ -341,7 +341,7 @@ def main():
             # train main
             print("Train:")
             train_main_acc = 100 * train_correct / train_total
-            train_main_loss_avg = train_loss / train_total
+            train_main_loss_avg = train_loss / len(train_loader)
             print(
                 f"  Main    - Loss: {train_main_loss_avg:.4f}, Acc: {train_main_acc:.2f}%"
             )
@@ -357,7 +357,7 @@ def main():
             if train_aux_loss is not None and train_aux_correct is not None:
                 for i, aux_loss in enumerate(train_aux_loss):
                     aux_acc = 100 * train_aux_correct[i] / train_total
-                    aux_loss_avg = aux_loss / train_total
+                    aux_loss_avg = aux_loss / len(train_loader)
                     print(
                         f"  Aux {i + 1:2d}  - Loss: {aux_loss_avg:.4f}, Acc: {aux_acc:.2f}%"
                     )
@@ -374,7 +374,7 @@ def main():
             # test
             print("Test:")
             test_main_acc = 100 * test_correct / test_total
-            test_main_loss_avg = test_loss / test_total
+            test_main_loss_avg = test_loss / len(test_loader)
             print(
                 f"  Main    - Loss: {test_main_loss_avg:.4f}, Acc: {test_main_acc:.2f}%"
             )
@@ -390,7 +390,7 @@ def main():
             if test_aux_loss is not None and test_aux_correct is not None:
                 for i, aux_loss in enumerate(test_aux_loss):
                     aux_acc = 100 * test_aux_correct[i] / test_total
-                    aux_loss_avg = aux_loss / test_total
+                    aux_loss_avg = aux_loss / len(test_loader) 
                     print(
                         f"  Aux {i + 1:2d}  - Loss: {aux_loss_avg:.4f}, Acc: {aux_acc:.2f}%"
                     )
@@ -406,9 +406,9 @@ def main():
 
         else:
             train_acc = 100 * train_correct / train_total
-            train_loss_avg = train_loss / train_total
+            train_loss_avg = train_loss / len(train_loader)
             test_acc = 100 * test_correct / test_total
-            test_loss_avg = test_loss / test_total
+            test_loss_avg = test_loss / len(test_loader) 
 
             print("Train:")
             print(f"  Loss: {train_loss_avg:.4f}, Acc: {train_acc:.2f}%")
