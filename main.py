@@ -21,6 +21,10 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
+cifar100_mean = (0.5071, 0.4865, 0.4409)
+cifar100_std = (0.2673, 0.2564, 0.2762)
+
+
 def main():
     # 引数
     parser = argparse.ArgumentParser(
@@ -56,13 +60,13 @@ def main():
                 "dataset": "cifar100",
                 "seed": args.seed,
                 "batch_size": 128,
-                "learning_rate": 1e-3,
+                "learning_rate": 3e-4,
                 "weight_decay": 5e-5,
                 "eta_min": 1e-6,
                 "warmup_epochs": 16,
                 "num_epochs": 1 if args.check else 256,
-                "image_size": 224,
-                "patch_size": 32,
+                "image_size": 32,  # CIFAR-100の元サイズ
+                "patch_size": 4,  # 8×8=64パッチになる
                 "num_layers": 12,
                 "num_heads": 12,
                 "hidden_dim": 768,
@@ -75,8 +79,8 @@ def main():
     model = (
         # vit-baseと同じパラメータ
         VitAux(
-            image_size=224,
-            patch_size=32,
+            image_size=32,
+            patch_size=4,
             num_layers=12,
             num_heads=12,
             hidden_dim=768,
@@ -85,8 +89,8 @@ def main():
         )
         if args.aux
         else Vit(
-            image_size=224,
-            patch_size=32,
+            image_size=32,
+            patch_size=4,
             num_layers=12,
             num_heads=12,
             hidden_dim=768,
@@ -97,7 +101,7 @@ def main():
 
     batch_size = 128
     num_epochs = 1 if args.check else 256
-    lr = 1e-3
+    lr = 3e-4  # 学習率を下げる
     weight_decay = 5e-5
     eta_min = 1e-6
     warmup_epochs = 16
@@ -125,11 +129,9 @@ def main():
         download=True,
         transform=torchvision.transforms.Compose(
             [
-                torchvision.transforms.Resize((224, 224)),
+                torchvision.transforms.RandomHorizontalFlip(p=0.5),  # データ拡張追加
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(
-                    (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
-                ),
+                torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
             ]
         ),
     )
@@ -140,11 +142,8 @@ def main():
         download=True,
         transform=torchvision.transforms.Compose(
             [
-                torchvision.transforms.Resize((224, 224)),
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(
-                    (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
-                ),
+                torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
             ]
         ),
     )
@@ -227,7 +226,9 @@ def main():
                 aux_loss_sum = sum(
                     [criterion(aux_output, labels) for aux_output in outputs[1]]
                 )
-                loss = main_loss + 0.3 * aux_loss_sum / len(outputs[1])
+                loss = main_loss + 0.1 * aux_loss_sum / len(
+                    outputs[1]
+                )
 
             else:
                 loss = criterion(outputs, labels)
@@ -235,6 +236,8 @@ def main():
                 train_correct += (predicted == labels).sum().item()
 
             loss.backward()
+            # 勾配クリッピングを追加
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             train_loss += loss.item()
@@ -450,8 +453,8 @@ def main():
                 "loss": current_accuracy,  # 精度を保存
                 "config": {
                     "model_type": model_name,
-                    "image_size": 224,
-                    "patch_size": 32,
+                    "image_size": 32,
+                    "patch_size": 4,
                     "num_layers": 12,
                     "num_heads": 12,
                     "hidden_dim": 768,
@@ -489,63 +492,63 @@ def main():
         wandb.finish()
 
 
-def load_best_model(checkpoint_path, device="cuda"):
-    """
-    保存された最高精度のモデルを読み込む
+# def load_best_model(checkpoint_path, device="cuda"):
+#     """
+#     保存された最高精度のモデルを読み込む
 
-    Args:
-        checkpoint_path (str): チェックポイントファイルのパス
-        device (str): デバイス ('cuda' or 'cpu')
+#     Args:
+#         checkpoint_path (str): チェックポイントファイルのパス
+#         device (str): デバイス ('cuda' or 'cpu')
 
-    Returns:
-        tuple: (model, checkpoint_info)
-    """
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+#     Returns:
+#         tuple: (model, checkpoint_info)
+#     """
+#     if not os.path.exists(checkpoint_path):
+#         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    config = checkpoint["config"]
+#     checkpoint = torch.load(checkpoint_path, map_location=device)
+#     config = checkpoint["config"]
 
-    # モデルの種類に応じてインスタンスを作成
-    if config["model_type"] == "vit_aux":
-        model = VitAux(
-            image_size=config["image_size"],
-            patch_size=config["patch_size"],
-            num_layers=config["num_layers"],
-            num_heads=config["num_heads"],
-            hidden_dim=config["hidden_dim"],
-            mlp_dim=config["mlp_dim"],
-            num_classes=config["num_classes"],
-        )
-    else:
-        model = Vit(
-            image_size=config["image_size"],
-            patch_size=config["patch_size"],
-            num_layers=config["num_layers"],
-            num_heads=config["num_heads"],
-            hidden_dim=config["hidden_dim"],
-            mlp_dim=config["mlp_dim"],
-            num_classes=config["num_classes"],
-        )
+#     # モデルの種類に応じてインスタンスを作成
+#     if config["model_type"] == "vit_aux":
+#         model = VitAux(
+#             image_size=config["image_size"],
+#             patch_size=config["patch_size"],
+#             num_layers=config["num_layers"],
+#             num_heads=config["num_heads"],
+#             hidden_dim=config["hidden_dim"],
+#             mlp_dim=config["mlp_dim"],
+#             num_classes=config["num_classes"],
+#         )
+#     else:
+#         model = Vit(
+#             image_size=config["image_size"],
+#             patch_size=config["patch_size"],
+#             num_layers=config["num_layers"],
+#             num_heads=config["num_heads"],
+#             hidden_dim=config["hidden_dim"],
+#             mlp_dim=config["mlp_dim"],
+#             num_classes=config["num_classes"],
+#         )
 
-    # 保存された重みを読み込み
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.to(device)
+#     # 保存された重みを読み込み
+#     model.load_state_dict(checkpoint["model_state_dict"])
+#     model.to(device)
 
-    # チェックポイント情報
-    checkpoint_info = {
-        "epoch": checkpoint["epoch"],
-        "best_accuracy": checkpoint["best_accuracy"],
-        "model_type": config["model_type"],
-        "seed": config["seed"],
-    }
+#     # チェックポイント情報
+#     checkpoint_info = {
+#         "epoch": checkpoint["epoch"],
+#         "best_accuracy": checkpoint["best_accuracy"],
+#         "model_type": config["model_type"],
+#         "seed": config["seed"],
+#     }
 
-    print(f"Loaded model: {config['model_type']}")
-    print(
-        f"Best accuracy: {checkpoint['best_accuracy']:.2f}% (Epoch {checkpoint['epoch']})"
-    )
+#     print(f"Loaded model: {config['model_type']}")
+#     print(
+#         f"Best accuracy: {checkpoint['best_accuracy']:.2f}% (Epoch {checkpoint['epoch']})"
+#     )
 
-    return model, checkpoint_info
+#     return model, checkpoint_info
 
 
 if __name__ == "__main__":

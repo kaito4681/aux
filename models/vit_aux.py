@@ -72,7 +72,7 @@ class Encoder(nn.Module):
 
         for layer in self.layers:
             input = layer(input)
-            encoder_features.append(input)  # LayerNormを適用する前の生の出力を保存
+            encoder_features.append(self.ln(input))  # LayerNormを適用してから保存
 
         input = self.ln(input)
         return input, encoder_features[
