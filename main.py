@@ -43,15 +43,40 @@ def main():
     )
     parser.add_argument("--use-wandb", action="store_true", help="wandbを使うかどうか")
     parser.add_argument("--seed", type=int, default=42, help="乱数シード (default: 42)")
+    parser.add_argument(
+            "--pretrained",
+            action="store_true",
+            help="事前学習済みViTの重みをロードするかどうか",
+        )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=128,
+        help="バッチサイズ (default: 128)",
+    )
 
     args = parser.parse_args()
 
     # seedを固定
     set_seed(args.seed)
 
+    # image_sizeの決定
+    image_size = 224 if args.pretrained else 32
+    patch_size = 16 if args.pretrained else 4
+
+    # ハイパーパラメータ
+    batch_size = args.batch_size
+    num_epochs = 1 if args.check else 256
+    lr = 1e-4  # 学習率を下げる
+    weight_decay = 0.1  # ViTで一般的により高い値
+    eta_min = 1e-6
+    warmup_epochs = 10  # warmupを短くする
+
     # wandb初期化
     if args.use_wandb:
         run_name = "vit-base-aux-cifar100" if args.aux else "vit-base-cifar100"
+        if args.pretrained:
+            run_name += "-pretrained"
         wandb.init(
             project="aux",
             name=run_name,
@@ -59,14 +84,14 @@ def main():
                 "model": "vit-base-aux" if args.aux else "vit-base",
                 "dataset": "cifar100",
                 "seed": args.seed,
-                "batch_size": 128,
-                "learning_rate": 1e-4,
-                "weight_decay": 0.1,
-                "eta_min": 1e-6,
-                "warmup_epochs": 10,
-                "num_epochs": 1 if args.check else 256,
-                "image_size": 32,  # CIFAR-100の元サイズ
-                "patch_size": 4,  # 8×8=64パッチになる
+                "batch_size": args.batch_size,
+                "learning_rate": lr,
+                "weight_decay": weight_decay,
+                "eta_min": eta_min,
+                "warmup_epochs": warmup_epochs,
+                "num_epochs": num_epochs,
+                "image_size": image_size,
+                "patch_size": patch_size,
                 "num_layers": 12,
                 "num_heads": 12,
                 "hidden_dim": 768,
@@ -75,36 +100,49 @@ def main():
             },
         )
 
-    # 定義
-    model = (
-        # vit-baseと同じパラメータ
-        VitAux(
-            image_size=32,
-            patch_size=4,
-            num_layers=12,
-            num_heads=12,
-            hidden_dim=768,
-            mlp_dim=3072,
-            num_classes=100,  # CIFAR-100用
-        )
-        if args.aux
-        else Vit(
-            image_size=32,
-            patch_size=4,
-            num_layers=12,
-            num_heads=12,
-            hidden_dim=768,
-            mlp_dim=3072,
-            num_classes=100,  # CIFAR-100用
-        )
-    )
 
-    batch_size = 128
-    num_epochs = 1 if args.check else 256
-    lr = 1e-4  # 学習率を下げる
-    weight_decay = 0.1  # ViTで一般的により高い値
-    eta_min = 1e-6
-    warmup_epochs = 10  # warmupを短くする
+    # モデル定義
+    if args.aux:
+        model = VitAux(
+            image_size=image_size,
+            patch_size=patch_size,
+            num_layers=12,
+            num_heads=12,
+            hidden_dim=768,
+            mlp_dim=3072,
+            num_classes=100,
+        )
+    else:
+        model = Vit(
+            image_size=image_size,
+            patch_size=patch_size,
+            num_layers=12,
+            num_heads=12,
+            hidden_dim=768,
+            mlp_dim=3072,
+            num_classes=100,
+        )
+
+    # 事前学習済み重みのロード
+    if args.pretrained:
+        print("Loading pretrained weights from torchvision ViT...")
+        # torchvisionのViT事前学習済みモデル
+    from torchvision.models import ViT_B_16_Weights, get_model
+
+    vit_pretrained = get_model("vit_b_16", weights=ViT_B_16_Weights.IMAGENET1K_V1)
+    pretrained_dict = vit_pretrained.state_dict()
+    model_dict = model.state_dict()
+    # auxの場合は一致する部分だけロード
+    pretrained_dict = {
+        k: v
+        for k, v in pretrained_dict.items()
+        if k in model_dict and v.size() == model_dict[k].size()
+    }
+    model_dict.update(pretrained_dict)
+    model.load_state_dict(model_dict)
+    print(f"Loaded {len(pretrained_dict)} layers from pretrained ViT.")
+
+
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -130,29 +168,35 @@ def main():
 
     criterion = torch.nn.CrossEntropyLoss()
 
+    # transform定義
+    train_transforms = [
+        torchvision.transforms.RandomHorizontalFlip(p=0.5),
+    ]
+    test_transforms = []
+    if args.pretrained:
+        train_transforms.append(torchvision.transforms.Resize(image_size))
+        test_transforms.append(torchvision.transforms.Resize(image_size))
+    train_transforms += [
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
+    ]
+    test_transforms += [
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
+    ]
+
     train_dataset = torchvision.datasets.CIFAR100(
         root="./data",
         train=True,
         download=True,
-        transform=torchvision.transforms.Compose(
-            [
-                torchvision.transforms.RandomHorizontalFlip(p=0.5),  # データ拡張追加
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
-            ]
-        ),
+        transform=torchvision.transforms.Compose(train_transforms),
     )
 
     test_dataset = torchvision.datasets.CIFAR100(
         root="./data",
         train=False,
         download=True,
-        transform=torchvision.transforms.Compose(
-            [
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
-            ]
-        ),
+        transform=torchvision.transforms.Compose(test_transforms),
     )
 
     train_loader = torch.utils.data.DataLoader(
