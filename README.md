@@ -2,10 +2,9 @@
 
 ## 実験1: Vitにauxを追加
 
-`loss = main_loss + 0.3 * aux_loss.mean()`
-
-
-```bash
-uv run main.py
-uv run main.py --aux
-```
+* **--aux all**
+`loss = main_loss + 0.1 * aux_loss.sum`
+* **--aux mid**
+`loss = main_loss + 0.3 * mid_aux_loss`
+* **--aux none**
+`loss = main_loss`

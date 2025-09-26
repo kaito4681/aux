@@ -5,7 +5,6 @@ build/
 dist/
 wheels/
 *.egg-info
-œ
 # Virtual environments
 .venv
 
@@ -14,4 +13,5 @@ logs/
 wandb/
 checkpoints/
 
-vit.log
+*.log
+nohup.out
