@@ -32,8 +32,9 @@ def main():
     )
     parser.add_argument(
         "--aux",
-        action="store_true",
-        help="auxiliary classifierを追加するかどうか",
+        choices=["all", "mid", "none"],
+        default="none",
+        help="auxの付けかた(choices: all(全て0.1倍で), mid(ちょうど真ん中0.3倍), none(なし:default))",
     )
     parser.add_argument(
         "--check", action="store_true", help="確認のために1エポックだけ実行"
@@ -44,10 +45,10 @@ def main():
     parser.add_argument("--use-wandb", action="store_true", help="wandbを使うかどうか")
     parser.add_argument("--seed", type=int, default=42, help="乱数シード (default: 42)")
     parser.add_argument(
-            "--pretrained",
-            action="store_true",
-            help="事前学習済みViTの重みをロードするかどうか",
-        )
+        "--pretrained",
+        action="store_true",
+        help="事前学習済みViTの重みをロードするかどうか",
+    )
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -67,21 +68,24 @@ def main():
     # ハイパーパラメータ
     batch_size = args.batch_size
     num_epochs = 1 if args.check else 256
-    lr = 1e-4  # 学習率を下げる
-    weight_decay = 0.1  # ViTで一般的により高い値
+    lr = 1e-4
+    weight_decay = 0.1
     eta_min = 1e-6
-    warmup_epochs = 10  # warmupを短くする
+    warmup_epochs = 5
 
+    run_name = (
+        "vit-base-cifar100" if args.aux == "none" else "vit-base-aux-cifar100"
+    )
+    if args.pretrained:
+        run_name += "-pretrained"
+        
     # wandb初期化
     if args.use_wandb:
-        run_name = "vit-base-aux-cifar100" if args.aux else "vit-base-cifar100"
-        if args.pretrained:
-            run_name += "-pretrained"
         wandb.init(
             project="aux",
             name=run_name,
             config={
-                "model": "vit-base-aux" if args.aux else "vit-base",
+                "model": "vit-base",
                 "dataset": "cifar100",
                 "seed": args.seed,
                 "batch_size": args.batch_size,
@@ -97,13 +101,14 @@ def main():
                 "hidden_dim": 768,
                 "mlp_dim": 3072,
                 "num_classes": 100,
+                "pretrained": args.pretrained,
+                "aux": args.aux,
             },
         )
 
-
     # モデル定義
-    if args.aux:
-        model = VitAux(
+    if args.aux == "none":
+        model = Vit(
             image_size=image_size,
             patch_size=patch_size,
             num_layers=12,
@@ -113,7 +118,7 @@ def main():
             num_classes=100,
         )
     else:
-        model = Vit(
+        model = VitAux(
             image_size=image_size,
             patch_size=patch_size,
             num_layers=12,
@@ -127,28 +132,26 @@ def main():
     if args.pretrained:
         print("Loading pretrained weights from torchvision ViT...")
         # torchvisionのViT事前学習済みモデル
-    from torchvision.models import ViT_B_16_Weights, get_model
+        from torchvision.models import ViT_B_16_Weights, get_model
 
-    vit_pretrained = get_model("vit_b_16", weights=ViT_B_16_Weights.IMAGENET1K_V1)
-    pretrained_dict = vit_pretrained.state_dict()
-    model_dict = model.state_dict()
-    # auxの場合は一致する部分だけロード
-    pretrained_dict = {
-        k: v
-        for k, v in pretrained_dict.items()
-        if k in model_dict and v.size() == model_dict[k].size()
-    }
-    model_dict.update(pretrained_dict)
-    model.load_state_dict(model_dict)
-    print(f"Loaded {len(pretrained_dict)} layers from pretrained ViT.")
-
-
+        vit_pretrained = get_model("vit_b_16", weights=ViT_B_16_Weights.IMAGENET1K_V1)
+        pretrained_dict = vit_pretrained.state_dict()
+        model_dict = model.state_dict()
+        # auxの場合は一致する部分だけロード
+        pretrained_dict = {
+            k: v
+            for k, v in pretrained_dict.items()
+            if k in model_dict and v.size() == model_dict[k].size()
+        }
+        model_dict.update(pretrained_dict)
+        model.load_state_dict(model_dict)
+        print(f"Loaded {len(pretrained_dict)} layers from pretrained ViT.")
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=lr,
         weight_decay=weight_decay,
-        betas=(0.9, 0.999),  # 明示的に設定
+        betas=(0.9, 0.999),
         eps=1e-8,
     )
 
@@ -253,7 +256,12 @@ def main():
             outputs = model(images)
             train_total += labels.size(0)
 
-            if args.aux:
+            if args.aux == "none":
+                loss = criterion(outputs, labels)
+                _, predicted = torch.max(outputs, 1)
+                train_correct += (predicted == labels).sum().item()
+
+            else:
                 # mainの計算
                 main_loss = criterion(outputs[0], labels)
                 _, predicted = torch.max(outputs[0], 1)
@@ -268,21 +276,20 @@ def main():
 
                 for i, aux_output in enumerate(outputs[1]):
                     # aux 損失
-                    train_aux_loss[i] += criterion(aux_output, labels)
+                    train_aux_loss[i] += criterion(aux_output, labels).item()
                     # aux 精度
                     _, aux_predicted = torch.max(aux_output, 1)
                     train_aux_correct[i] += (aux_predicted == labels).sum().item()
 
-                # 最終的なloss
-                aux_loss_sum = sum(
-                    [criterion(aux_output, labels) for aux_output in outputs[1]]
-                )
-                loss = main_loss + 0.1 * aux_loss_sum / len(outputs[1])
-
-            else:
-                loss = criterion(outputs, labels)
-                _, predicted = torch.max(outputs, 1)
-                train_correct += (predicted == labels).sum().item()
+                # backprop用のloss計算
+                if args.aux == "mid":
+                    mid_index = len(outputs[1]) // 2
+                    loss = main_loss + 0.3 * criterion(outputs[1][mid_index], labels)
+                else:  # all
+                    aux_loss_sum = sum(
+                        [criterion(aux_output, labels) for aux_output in outputs[1]]
+                    )
+                    loss = main_loss + 0.1 * aux_loss_sum
 
             loss.backward()
             # 勾配クリッピングを追加
@@ -327,7 +334,17 @@ def main():
 
                 test_total += labels.size(0)
 
-                if args.aux:
+                if args.aux == "none":
+                    loss = criterion(outputs, labels)
+
+                    # 損失を累積
+                    test_loss += loss.item()
+
+                    # 精度計算
+                    _, predicted = torch.max(outputs, 1)
+                    test_correct += (predicted == labels).sum().item()
+
+                else:
                     # 最終層のlossの計算
                     loss = criterion(outputs[0], labels)
                     test_loss += loss.item()
@@ -350,16 +367,6 @@ def main():
                         # auxの精度計算
                         _, aux_predicted = torch.max(aux_output, 1)
                         test_aux_correct[i] += (aux_predicted == labels).sum().item()
-
-                else:
-                    loss = criterion(outputs, labels)
-
-                    # 損失を累積
-                    test_loss += loss.item()
-
-                    # 精度計算
-                    _, predicted = torch.max(outputs, 1)
-                    test_correct += (predicted == labels).sum().item()
 
                 # tqdmを使っている場合、進捗バーに情報を更新
                 if args.use_tqdm and isinstance(test_iterator, tqdm):
@@ -386,7 +393,28 @@ def main():
                 "learning_rate": current_lr,
             }
 
-        if args.aux:
+        if args.aux == "none":
+            train_acc = 100 * train_correct / train_total
+            train_loss_avg = train_loss / len(train_loader)
+            test_acc = 100 * test_correct / test_total
+            test_loss_avg = test_loss / len(test_loader)
+
+            print("Train:")
+            print(f"  Loss: {train_loss_avg:.4f}, Acc: {train_acc:.2f}%")
+            print("Test:")
+            print(f"  Loss: {test_loss_avg:.4f}, Acc: {test_acc:.2f}%")
+            print()
+
+            if args.use_wandb:
+                log_dict.update(
+                    {
+                        "train/loss": train_loss_avg,
+                        "train/accuracy": train_acc,
+                        "test/loss": test_loss_avg,
+                        "test/accuracy": test_acc,
+                    }
+                )
+        else:
             # train main
             print("Train:")
             train_main_acc = 100 * train_correct / train_total
@@ -431,8 +459,8 @@ def main():
             if args.use_wandb:
                 log_dict.update(
                     {
-                        "test/main_loss": test_main_loss_avg,
-                        "test/main_accuracy": test_main_acc,
+                        "test/loss": test_main_loss_avg,
+                        "test/accuracy": test_main_acc,
                     }
                 )
 
@@ -453,42 +481,20 @@ def main():
                         )
             print()
 
-        else:
-            train_acc = 100 * train_correct / train_total
-            train_loss_avg = train_loss / len(train_loader)
-            test_acc = 100 * test_correct / test_total
-            test_loss_avg = test_loss / len(test_loader)
-
-            print("Train:")
-            print(f"  Loss: {train_loss_avg:.4f}, Acc: {train_acc:.2f}%")
-            print("Test:")
-            print(f"  Loss: {test_loss_avg:.4f}, Acc: {test_acc:.2f}%")
-            print()
-
-            if args.use_wandb:
-                log_dict.update(
-                    {
-                        "train/loss": train_loss_avg,
-                        "train/accuracy": train_acc,
-                        "test/loss": test_loss_avg,
-                        "test/accuracy": test_acc,
-                    }
-                )
-
         # wandbにログを送信
         if args.use_wandb:
             wandb.log(log_dict)
 
         # 最高精度の更新とモデル保存
         # メインモデル（aux使用時は最終層、通常時は出力層）の精度で判定
-        current_accuracy = test_main_acc if args.aux else test_acc
+        current_accuracy = test_acc if args.aux == "none" else test_main_acc 
 
         if current_accuracy > best_accuracy:
             best_accuracy = current_accuracy
             best_epoch = epoch + 1
 
             # モデル保存のためのファイル名を生成
-            model_name = "vit_base_aux" if args.aux else "vit_base"
+            model_name = run_name
             dataset = "cifar100"
             checkpoint_path = os.path.join(save_dir, f"{model_name}_{dataset}_best.pth")
 
@@ -531,7 +537,7 @@ def main():
     print("=" * 50)
     print("Training completed!")
     print(f"Best accuracy: {best_accuracy:.2f}% (achieved at epoch {best_epoch})")
-    model_name = "vit_aux" if args.aux else "vit_base"
+    model_name = run_name
     checkpoint_path = os.path.join(save_dir, f"{model_name}_best.pth")
     print(f"Best model saved at: {checkpoint_path}")
     print("=" * 50)
