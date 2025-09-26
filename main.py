@@ -268,7 +268,7 @@ def main():
 
                 for i, aux_output in enumerate(outputs[1]):
                     # aux 損失
-                    train_aux_loss[i] += criterion(aux_output, labels).item()
+                    train_aux_loss[i] += criterion(aux_output, labels)
                     # aux 精度
                     _, aux_predicted = torch.max(aux_output, 1)
                     train_aux_correct[i] += (aux_predicted == labels).sum().item()
