@@ -14,6 +14,13 @@ from models.plainnet import (
     PlainNet101,
     PlainNet152,
 )
+from models.plainnet_aux import (
+    PlainNetAux18,
+    PlainNetAux34,
+    PlainNetAux50,
+    PlainNetAux101,
+    PlainNetAux152,
+)
 
 
 def set_seed(seed):
@@ -91,9 +98,15 @@ def main():
         )
 
     if args.aux:
-        # dict_aux = {True: "with_aux", False: "no_aux"}
-        # TODO
-        exit("aux付きPlainNetは未実装です")
+        dict_aux = {
+            "18": PlainNetAux18,
+            "34": PlainNetAux34,
+            "50": PlainNetAux50,
+            "101": PlainNetAux101,
+            "152": PlainNetAux152,
+        }
+        run_name = f"PlainNetAux{args.model_size}_{args.seed}"
+        model = dict_aux[args.model_size](num_classes=100)
     else:
         dict_aux = {
             "18": PlainNet18,
@@ -187,6 +200,8 @@ def main():
         train_loss = 0.0
         train_correct = 0
         train_total = 0
+        train_aux_loss = 0.0
+        train_aux_correct = 0
 
         # tqdmを使うかどうかで分岐
         train_iterator = (
@@ -207,8 +222,15 @@ def main():
             train_total += labels.size(0)
 
             if args.aux:
-                # TODO aux付きPlainNetの実装
-                exit("aux付きPlainNetは未実装です")
+                out, aux_out = outputs
+                loss = criterion(out, labels)
+                aux_loss = criterion(aux_out, labels)
+
+                loss = loss + 0.3 * aux_loss
+                _, predicted = torch.max(out, 1)
+                train_correct += (predicted == labels).sum().item()
+                _, aux_predicted = torch.max(aux_out, 1)
+                train_aux_correct += (aux_predicted == labels).sum().item()
             else:
                 loss = criterion(outputs, labels)
                 _, predicted = torch.max(outputs, 1)
@@ -219,6 +241,8 @@ def main():
             optimizer.step()
 
             train_loss += loss.item()
+            if args.aux:
+                train_aux_loss += aux_loss.item()
 
             # tqdmを使っている場合、進捗バーに情報を更新
             if args.use_tqdm and isinstance(train_iterator, tqdm):
@@ -235,6 +259,8 @@ def main():
         test_loss = 0.0
         test_correct = 0
         test_total = 0
+        test_aux_loss = 0.0
+        test_aux_correct = 0
 
         # tqdmを使うかどうかで分岐
         test_iterator = (
@@ -255,8 +281,16 @@ def main():
                 test_total += labels.size(0)
 
                 if args.aux:
-                    # TODO aux付きPlainNetの実装
-                    exit("aux付きPlainNetは未実装です")
+                    out, aux_out = outputs
+                    loss = criterion(out, labels)
+                    aux_loss = criterion(aux_out, labels)
+                    _, predicted = torch.max(out, 1)
+                    test_correct += (predicted == labels).sum().item()
+                    _, aux_predicted = torch.max(aux_out, 1)
+                    test_aux_correct += (aux_predicted == labels).sum().item()
+                    test_loss += loss.item()
+                    test_aux_loss += aux_loss.item()
+
                 else:
                     loss = criterion(outputs, labels)
                     _, predicted = torch.max(outputs, 1)
@@ -289,32 +323,42 @@ def main():
                 "learning_rate": current_lr,
             }
 
+        train_acc = 100 * train_correct / train_total
+        train_loss = train_loss / len(train_loader)
+        test_acc = 100 * test_correct / test_total
+        test_loss = test_loss / len(test_loader)
+        print("Train:")
+        print(f"  Loss: {train_loss:.4f}, Acc: {train_acc:.2f}%")
+        print("Test:")
+        print(f"  Loss: {test_loss:.4f}, Acc: {test_acc:.2f}%")
+        print()
+        if args.use_wandb:
+            log_dict.update(
+                {
+                    "train/loss": train_loss,
+                    "train/accuracy": train_acc,
+                    "test/loss": test_loss,
+                    "test/accuracy": test_acc,
+                }
+            )
         if args.aux:
-            # TODO aux付きPlainNetの実装
-            exit("aux付きPlainNetは未実装です")
-        else:
-            train_acc = 100 * train_correct / train_total
-            train_loss = train_loss / len(train_loader)
-            test_acc = 100 * test_correct / test_total
-            test_loss = test_loss / len(test_loader)
-
-            print("Train:")
-            print(f"  Loss: {train_loss:.4f}, Acc: {train_acc:.2f}%")
-            print("Test:")
-            print(f"  Loss: {test_loss:.4f}, Acc: {test_acc:.2f}%")
-            print()
-
+            train_aux_acc = 100 * train_aux_correct / train_total
+            train_aux_loss_avg = train_aux_loss / len(train_loader)
+            test_aux_acc = 100 * test_aux_correct / test_total
+            test_aux_loss_avg = test_aux_loss / len(test_loader)
+            print("Train(aux):")
+            print(f"  Train Loss: {train_aux_loss_avg:.4f}, Acc: {train_aux_acc:.2f}%")
+            print(f"  Test  Loss: {test_aux_loss_avg:.4f}, Acc: {test_aux_acc:.2f}%")
             if args.use_wandb:
                 log_dict.update(
                     {
-                        "train/loss": train_loss,
-                        "train/accuracy": train_acc,
-                        "test/loss": test_loss,
-                        "test/accuracy": test_acc,
+                        "train/aux_loss": train_aux_loss_avg,
+                        "train/aux_accuracy": train_aux_acc,
+                        "test/aux_loss": test_aux_loss_avg,
+                        "test/aux_accuracy": test_aux_acc,
                     }
                 )
-
-            print()
+        print()
 
         # wandbにログを送信
         if args.use_wandb:
@@ -340,7 +384,7 @@ def main():
                 "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": scheduler.state_dict(),
                 "best_accuracy": best_accuracy,
-                "loss": current_accuracy,  # 精度を保存
+                "accuracy": current_accuracy,  # 精度を保存
                 "config": {
                     "model_type": "plainnet" + args.model_size,
                     "num_classes": 100,
