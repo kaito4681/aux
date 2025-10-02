@@ -82,7 +82,7 @@ def main():
     if args.use_wandb:
         run_name = ("plainnet_aux" if args.aux else "plainnet") + args.model_size
         wandb.init(
-            project="aux-skipconnection2",
+            project="aux-skipconnection-adamw",
             name=run_name,
             config={
                 "model_type": "plainnet" + args.model_size,
@@ -132,12 +132,14 @@ def main():
     criterion = torch.nn.CrossEntropyLoss()
 
     # transform
-    train_transform = transforms.Compose(
+    train_transforms = torchvision.transforms.Compose(
         [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+            torchvision.transforms.RandomCrop(32, padding=4),
+            torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(
+                (0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)
+            ),
         ]
     )
     test_transforms = [

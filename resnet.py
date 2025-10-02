@@ -90,7 +90,7 @@ def main():
     if args.use_wandb:
         run_name = ("resnet_aux" if args.aux else "resnet") + args.model_size
         wandb.init(
-            project="aux-skipconnection2",
+            project="aux-skipconnection-adamw",
             name=run_name,
             config={
                 "model_type": "resnet" + args.model_size,
