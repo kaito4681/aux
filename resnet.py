@@ -4,18 +4,24 @@ import random
 
 import torch
 import torchvision
+from torchvision.models import (
+    resnet18 as ResNet18,
+)
+from torchvision.models import (
+    resnet34 as ResNet34,
+)
+from torchvision.models import (
+    resnet50 as ResNet50,
+)
+from torchvision.models import (
+    resnet101 as ResNet101,
+)
+from torchvision.models import (
+    resnet152 as ResNet152,
+)
 from tqdm import tqdm
 
 import wandb
-
-from torchvision.models import (
-    resnet18 as ResNet18,
-    resnet34 as ResNet34,
-    resnet50 as ResNet50,
-    resnet101 as ResNet101,
-    resnet152 as ResNet152,
-)
-
 from models.resnet_aux import (
     ResNetAux18,
     ResNetAux34,
@@ -77,9 +83,8 @@ def main():
     # ハイパーパラメータ
     batch_size = args.batch_size
     num_epochs = 1 if args.check else 128
-    lr = 1e-1
-    weight_decay = 1e-4
-    momentum = 0.9
+    lr = 1e-2  # AdamW用に調整
+    weight_decay = 1e-2  # 過学習抑制のために強める
 
     # wandb初期化
     if args.use_wandb:
@@ -94,7 +99,7 @@ def main():
                 "num_epochs": num_epochs,
                 "learning_rate": lr,
                 "weight_decay": weight_decay,
-                "momentum": momentum,
+                "optimizer": "AdamW",
                 "seed": args.seed,
                 "aux": args.aux,
             },
@@ -121,10 +126,9 @@ def main():
         run_name = f"ResNet{args.model_size}_{args.seed}"
         model = dict_aux[args.model_size](num_classes=100)
 
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=lr,
-        momentum=momentum,
         weight_decay=weight_decay,
     )
 
@@ -137,7 +141,11 @@ def main():
 
     # transform
     train_transforms = [
-        torchvision.transforms.AutoAugment(policy=torchvision.transforms.AutoAugmentPolicy.CIFAR10),
+        torchvision.transforms.AutoAugment(
+            policy=torchvision.transforms.AutoAugmentPolicy.CIFAR10
+        ),
+        torchvision.transforms.RandomCrop(32, padding=4),
+        torchvision.transforms.RandomHorizontalFlip(),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
     ]

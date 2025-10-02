@@ -40,7 +40,7 @@ cifar100_std = (0.2673, 0.2564, 0.2762)
 def main():
     # 引数
     parser = argparse.ArgumentParser(
-        description="resnetにauxiliary classifierを追加する実験"
+        description="plainnetにauxiliary classifierを追加する実験"
     )
     parser.add_argument(
         "--aux",
@@ -75,9 +75,8 @@ def main():
     # ハイパーパラメータ
     batch_size = args.batch_size
     num_epochs = 1 if args.check else 128
-    lr = 1e-1
-    weight_decay = 1e-4
-    momentum = 0.9
+    lr = 1e-3  # AdamW用に調整
+    weight_decay = 1e-2  # 過学習抑制のために強める
 
     # wandb初期化
     if args.use_wandb:
@@ -92,7 +91,7 @@ def main():
                 "num_epochs": num_epochs,
                 "learning_rate": lr,
                 "weight_decay": weight_decay,
-                "momentum": momentum,
+                "optimizer": "AdamW",
                 "seed": args.seed,
                 "aux": args.aux,
             },
@@ -119,10 +118,9 @@ def main():
         run_name = f"PlainNet{args.model_size}_{args.seed}"
         model = dict_aux[args.model_size](num_classes=100)
 
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=lr,
-        momentum=momentum,
         weight_decay=weight_decay,
     )
 
@@ -134,13 +132,14 @@ def main():
     criterion = torch.nn.CrossEntropyLoss()
 
     # transform
-    train_transforms = [
-        torchvision.transforms.AutoAugment(
-            policy=torchvision.transforms.AutoAugmentPolicy.CIFAR10
-        ),
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
-    ]
+    train_transform = transforms.Compose(
+        [
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+        ]
+    )
     test_transforms = [
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
