@@ -22,7 +22,7 @@ SEEDS=(100 200 300)
 
 for SEED in "${SEEDS[@]}"; do
 for SIZE in "${MODEL_SIZES[@]}"; do
-	CMD="uv run python plainnet.py --model-size ${SIZE} --seed ${SEED} --batch-size ${BATCH_SIZE}"
+	CMD="uv run python resnet.py --model-size ${SIZE} --seed ${SEED} --batch-size ${BATCH_SIZE}"
 
 	if [ "$USE_AUX" = true ]; then
 		CMD+=" --aux"
