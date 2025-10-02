@@ -83,7 +83,7 @@ def main():
     if args.use_wandb:
         run_name = ("plainnet_aux" if args.aux else "plainnet") + args.model_size
         wandb.init(
-            project="aux-skipconnection",
+            project="aux-skipconnection2",
             name=run_name,
             config={
                 "model_type": "plainnet" + args.model_size,
