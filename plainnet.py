@@ -135,6 +135,7 @@ def main():
 
     # transform
     train_transforms = [
+        torchvision.transforms.RandomCrop(32, padding=4),
         torchvision.transforms.RandomHorizontalFlip(p=0.5),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
