@@ -81,9 +81,10 @@ def main():
 
     # wandb初期化
     if args.use_wandb:
+        run_name = ("plainnet_aux" if args.aux else "plainnet") + args.model_size
         wandb.init(
             project="aux-resnet",
-            name="plainnet" + args.model_size,
+            name=run_name,
             config={
                 "model_type": "plainnet" + args.model_size,
                 "dataset": "cifar100",
