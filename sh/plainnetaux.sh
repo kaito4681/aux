@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # Usage:
-# chmod +x sh/plainnet.sh
-# nohup ./sh/plainnet.sh > all.log 2>&1 &
+# chmod +x sh/plainnetaux.sh
+# nohup ./sh/plainnetaux.sh > all.log 2>&1 &
 
 # export WANDB_API_KEY=
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-mkdir -p logs/plainnet/${TIMESTAMP}
+mkdir -p logs/plainnetaux/${TIMESTAMP}
 
-echo "PID: $$" >> logs/plainnet/${TIMESTAMP}/pid.log 2>&1
+echo "PID: $$" >> logs/plainnetaux/${TIMESTAMP}/pid.log 2>&1
 
 BATCH_SIZE=128
 
@@ -40,15 +40,15 @@ for SIZE in "${MODEL_SIZES[@]}"; do
 		CMD+=" --check"
 	fi
 
-	echo "$CMD" >> logs/plainnet/${TIMESTAMP}/main.log 2>&1
-	echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')" >> logs/plainnet/${TIMESTAMP}/main.log 2>&1
+	echo "$CMD" >> logs/plainnetaux/${TIMESTAMP}/main.log 2>&1
+	echo "Start time: $(date '+%Y-%m-%d %H:%M:%S')" >> logs/plainnetaux/${TIMESTAMP}/main.log 2>&1
 
 	# 実行してログを残す
-	eval "$CMD" >> logs/plainnet/${TIMESTAMP}/${SIZE}_${SEED}.log 2>&1
+	eval "$CMD" >> logs/plainnetaux/${TIMESTAMP}/${SIZE}_${SEED}.log 2>&1
 
-	echo "End time: $(date '+%Y-%m-%d %H:%M:%S')" >> logs/plainnet/${TIMESTAMP}/main.log 2>&1
-	echo "-" >> logs/plainnet/${TIMESTAMP}/main.log 2>&1
+	echo "End time: $(date '+%Y-%m-%d %H:%M:%S')" >> logs/plainnetaux/${TIMESTAMP}/main.log 2>&1
+	echo "-" >> logs/plainnetaux/${TIMESTAMP}/main.log 2>&1
 done
 done
 
-echo "All runs completed at: $(date '+%Y-%m-%d %H:%M:%S')" >> logs/plainnet/${TIMESTAMP}/main.log 2>&1
+echo "All runs completed at: $(date '+%Y-%m-%d %H:%M:%S')" >> logs/plainnetaux/${TIMESTAMP}/main.log 2>&1

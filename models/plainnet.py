@@ -1,10 +1,7 @@
-from typing import Callable, Optional, Union
+from typing import Union
 
-import torch
-import torch.nn as nn
 from torch import Tensor
-from torchvision.models.resnet import conv1x1, conv3x3,BasicBlock, Bottleneck, ResNet
-from torchvision.utils import _log_api_usage_once
+from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet
 
 
 class PlainBasicBlock(BasicBlock):
@@ -26,6 +23,7 @@ class PlainBasicBlock(BasicBlock):
         out = self.relu(out)
 
         return out
+
 
 class PlainBottleneck(Bottleneck):
     def forward(self, x: Tensor) -> Tensor:
@@ -50,6 +48,7 @@ class PlainBottleneck(Bottleneck):
         out = self.relu(out)
 
         return out
+
 
 class PlainNet(ResNet):
     """Plain network built on ResNet backbone without residual shortcuts."""
