@@ -76,7 +76,7 @@ def main():
     batch_size = args.batch_size
     num_epochs = 1 if args.check else 128
     lr = 1e-1
-    weight_decay = 5e-4
+    weight_decay = 1e-4
     momentum = 0.9
 
     # wandb初期化
