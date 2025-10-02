@@ -132,16 +132,13 @@ def main():
     criterion = torch.nn.CrossEntropyLoss()
 
     # transform
-    train_transforms = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.RandomCrop(32, padding=4),
-            torchvision.transforms.RandomHorizontalFlip(),
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(
-                (0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)
-            ),
-        ]
-    )
+    train_transforms = [
+        torchvision.transforms.RandomCrop(32, padding=4),
+        torchvision.transforms.RandomHorizontalFlip(),
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
+    ]
+
     test_transforms = [
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(cifar100_mean, cifar100_std),
