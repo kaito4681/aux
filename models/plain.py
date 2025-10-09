@@ -69,18 +69,21 @@ class PlainBottleneck(Bottleneck):
 class Plain(ResNet):
     def __init__(
         self,
+        block: type[Union[PlainBasicBlock, PlainBottleneck]],
         use_bn: bool = False,
         use_skip: bool = False,
         use_aux: bool = False,
+        num_classes: int = 1000,
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
         self.use_bn = use_bn
         self.use_skip = use_skip
+        self.block_class = block
+        super().__init__(block=block, num_classes=num_classes, *args, **kwargs)
         self.use_aux = use_aux
         if use_aux:
-            self.aux_fc = nn.Linear(128 * self.block.expansion, self.num_classes)
+            self.aux_fc = nn.Linear(128 * self.block_class.expansion, num_classes)
 
     def _make_layer(
         self,
