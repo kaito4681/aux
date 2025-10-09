@@ -27,7 +27,7 @@ echo "Detected ${NUM_GPUS} GPUs" >> logs/plain/${TIMESTAMP}/main.log 2>&1
 CURRENT_GPU=0
 
 # 各実験設定の配列
-CONFIGS=("base" "base-aux" "bn" "bn-aux" "skip" "skip-aux")
+CONFIGS=("base" "base-aux" "bn" "bn-aux" "skip" "skip-aux" "resnet" "resnet-aux")
 
 for SEED in "${SEEDS[@]}"; do
 for SIZE in "${MODEL_SIZES[@]}"; do
@@ -60,6 +60,11 @@ for CONFIG in "${CONFIGS[@]}"; do
 		"skip-aux")
 			CMD+=" --skip --aux"
 			;;
+		"resnet")
+			CMD+=" --skip --bn"
+			;;
+		"resnet-aux")
+			CMD+=" --skip --bn --aux"
 	esac
 
 	if [ "$USE_WANDB" = true ]; then
