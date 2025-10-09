@@ -8,20 +8,17 @@ from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet, conv1x1
 class PlainBasicBlock(BasicBlock):
     def __init__(self, use_bn: bool = False, use_skip: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.use_bn = use_bn
         self.use_skip = use_skip
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x
 
         out = self.conv1(x)
-        if self.use_bn:
-            out = self.bn1(out)
+        out = self.bn1(out)  # use_bn=Falseの時はIdentityになっている
         out = self.relu(out)
 
         out = self.conv2(out)
-        if self.use_bn:
-            out = self.bn2(out)
+        out = self.bn2(out)  # use_bn=Falseの時はIdentityになっている
 
         if self.use_skip:
             if self.downsample is not None:
@@ -36,25 +33,21 @@ class PlainBasicBlock(BasicBlock):
 class PlainBottleneck(Bottleneck):
     def __init__(self, use_bn: bool = False, use_skip: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.use_bn = use_bn
         self.use_skip = use_skip
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x
 
         out = self.conv1(x)
-        if self.use_bn:
-            out = self.bn1(out)
+        out = self.bn1(out)  # use_bn=Falseの時はIdentityになっている
         out = self.relu(out)
 
         out = self.conv2(out)
-        if self.use_bn:
-            out = self.bn2(out)
+        out = self.bn2(out)  # use_bn=Falseの時はIdentityになっている
         out = self.relu(out)
 
         out = self.conv3(out)
-        if self.use_bn:
-            out = self.bn3(out)
+        out = self.bn3(out)  # use_bn=Falseの時はIdentityになっている
 
         if self.use_skip:
             if self.downsample is not None:
@@ -77,9 +70,13 @@ class Plain(ResNet):
         *args,
         **kwargs,
     ):
-        self.use_bn = use_bn
         self.use_skip = use_skip
         self.block_class = block
+
+        # use_bn=Falseの時はBNの代わりにIdentityを使う
+        if not use_bn:
+            kwargs["norm_layer"] = nn.Identity
+
         super().__init__(block=block, num_classes=num_classes, *args, **kwargs)
         self.use_aux = use_aux
         if use_aux:
@@ -108,7 +105,6 @@ class Plain(ResNet):
         layers = []
         layers.append(
             block(
-                use_bn=self.use_bn,
                 use_skip=self.use_skip,
                 inplanes=self.inplanes,
                 planes=planes,
@@ -124,7 +120,6 @@ class Plain(ResNet):
         for _ in range(1, blocks):
             layers.append(
                 block(
-                    use_bn=self.use_bn,
                     use_skip=self.use_skip,
                     inplanes=self.inplanes,
                     planes=planes,
@@ -140,8 +135,7 @@ class Plain(ResNet):
     def _forward_impl(self, x: Tensor):
         # See note [TorchScript super()]
         x = self.conv1(x)
-        if self.use_bn:
-            x = self.bn1(x)
+        x = self.bn1(x)  # use_bn=Falseの時はIdentityになっている
         x = self.relu(x)
         x = self.maxpool(x)
 

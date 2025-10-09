@@ -17,8 +17,10 @@ BATCH_SIZE=128
 USE_WANDB=true
 USE_TQDM=false
 CHECK=false
-MODEL_SIZES=("152" "101" "50" "34" "18")
-SEEDS=(100 200 300)
+# MODEL_SIZES=("152" "101" "50" "34" "18")
+MODEL_SIZES=("34" "18")
+# SEEDS=(100 200 300)
+SEEDS=(100)
 
 NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 echo "Detected ${NUM_GPUS} GPUs" >> logs/plain/${TIMESTAMP}/main.log 2>&1
